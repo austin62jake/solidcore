@@ -6,11 +6,13 @@
   `[0.4192727339336013, 2.1527686633843524]`, accuracy 1e-9. Closed form
   `-c0/c1 (cos(c1 b + c2) - cos(c1 a + c2))` = 9.756956687989441e-17.
 - **Values:** upstream 9.756913811407506e-17 (relative error -4.39e-6); solidcore before
-  9.75691082970234e-17 (-4.70e-6); after: within four times the accuracy (test
-  `an_integral_below_the_old_floor_is_held_relative_to_its_size`; each step is held to the
-  accuracy times the scale, not their sum to the accuracy times the final value, which is
-  0.2 of the amplitude), and the same integrand scaled by a power of two gives the same
-  relative error bit for bit.
+  9.75691082970234e-17 (-4.70e-6); after: within the bound the control implies (test
+  `an_integral_below_the_old_floor_is_held_relative_to_its_size`). Each step's error is
+  held to `accuracy * s_i`, not their sum to `accuracy` times the final value (0.2 of the
+  amplitude): the total is at most `accuracy * ((N + 2) span G + N tiny)` for `N` accepted
+  steps and `G` the largest `|g|`, since `s_i <= peak + 2 |h_i| G + tiny` and
+  `peak <= span G`. The same integrand scaled by a power of two gives the same steps and
+  value bit for bit.
 - **Cause:** `OdeIntegrator::step_in` replaced every component's error scale below
   `EFF_ZERO` (1e-12) by `EFF_ZERO`, and `integrate` added `tiny = EFF_ZERO_SQ = 1e-24` to the scale
   (`|y| + |h y'| + tiny`). For an integral and an integrand far below 1e-12 the floor decided:
@@ -23,11 +25,17 @@
   (retries included, never falling). The last term is the one that does not shrink with
   the step: at an integrand zero at the start (`k t^4`) the estimate and the sample term
   both fall like `h^5`, their ratio is constant, and the steps would shrink to underflow;
-  against `G`, fixed over the retries, the estimate falls below `accuracy * s`. The sample
+  against `G`, fixed over the retries, the estimate falls below `accuracy * s`. `EFF_ZERO`
+  (upstream's number) is now the relative factor of that floor, `1e-12` of `span * G`. The sample
   term does not vanish at a zero of the integrand and the peak does not where `y` passes
   through zero (a centred moment). All four scale exactly with the integrand: a power of
   two gives the same steps and `k` times the value bit for bit (test
-  `the_control_is_invariant_under_the_integrand_scale`). A scale of exactly zero means
+  `the_control_is_invariant_under_the_integrand_scale`), above `tiny`. Near the subnormal
+  range (amplitudes about 1e-300) `EFF_ZERO * span * G` can underflow and the invariance is
+  not claimed. `G` takes the samples of every trial step, so the largest trial step sets
+  the floor and the step count depends on the initial trial step as well as on the
+  integrand: the invariance is under `k`, not under the first step (test
+  `the_steps_depend_on_the_first_trial_step_and_not_on_the_scale`). A scale of exactly zero means
   every sample is zero and the estimates are exactly zero. `tiny` (default `EFF_ZERO_SQ`)
   is unchanged: an additive constant that still holds an integral below about 1e-24 to an
   absolute bound, a known limit (documented on `OdeIntegrator::new`); changing the default
@@ -35,7 +43,11 @@
   scale-invariance tests build `OdeIntegrator::new(10_000, 0.0)`.
   `OdeIntegrator::step` (public) keeps upstream's in-place floor, which its goldens record.
   The final owed-error check reads the same size as the control (the peak, not the final
-  value), so an integral that cancels is not refused for ending at zero.
+  value), so an integral that cancels is not refused for ending at zero (test
+  `the_owed_error_of_a_cancelling_integral_is_checked_against_its_peak`, which scans the
+  samples' rounding bound for a run whose steps owe part of the accuracy times the peak
+  and one whose steps owe more). To read the owed errors the steps of `integrate` are in a
+  private `run`, which returns them; `integrate` makes the check.
 - **Limit:** an integrand analytically zero but evaluated as noise above `EFF_ZERO` of its own
   size cannot converge: a typed `SM_ERR` at `OP_STEP_CONTROL`, nothing loosened.
 - **Unchanged:** the rounding floor and the debt check (already relative), and the
@@ -58,3 +70,6 @@
 
   So a tight accuracy on an integrand that is zero at the start now converges where it did
   not, and costs the steps the accuracy needs at any size.
+
+  The first trial step also moves the count (`G` is set by it): the table above is for a
+  first trial step of a tenth of the interval; see the test for `0.1` and `0.5`.
