@@ -487,7 +487,7 @@ fn rig_fixes() {
         // A flat JSON array of flag names: every other piece between quotes.
         let names: Vec<&str> = text.split('"').skip(1).step_by(2).collect();
         assert!(!names.is_empty(), "{path}: no fixes");
-        solidcore_ops::session::set_fixes(names).unwrap();
+        solidcore_ops::session::set_thread_fixes(names).unwrap();
     });
 }
 

@@ -261,6 +261,24 @@ fn a_threads_fixes_are_its_own_call_by_call() {
     assert_eq!(fixes(), UpstreamFixes::NAMES);
 }
 
+/// A thread's own fixes are invisible to the threads that named none, which run with the
+/// process's: a test that names fixes cannot change what a test beside it runs with.
+#[test]
+fn a_threads_fixes_do_not_reach_other_threads() {
+    std::thread::spawn(|| {
+        set_thread_fixes(UpstreamFixes::NAMES.iter().copied()).unwrap();
+        assert_eq!(fixes(), UpstreamFixes::NAMES);
+    })
+    .join()
+    .unwrap();
+    let process = FIXES.lock().unwrap().unwrap_or_default();
+    let beside_is_the_process =
+        std::thread::spawn(move || run("reads its fixes", |k| Ok(k.fixes == process)).unwrap())
+            .join()
+            .unwrap();
+    assert!(beside_is_the_process);
+}
+
 /// Setting the fixes from inside a kernel call (an application's provenance rule runs in one)
 /// is refused, not a wait on the kernel the call holds.
 #[test]
